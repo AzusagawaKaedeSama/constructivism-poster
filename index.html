@@ -1,0 +1,1173 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>构成主义海报生成器</title>
+<style>
+  @font-face { font-family: "CN Black"; src: url("fonts/NotoSansSC-Black-gb2312.otf") format("opentype"); font-weight: 900; font-display: block; }
+  @font-face { font-family: "Cond"; src: url("fonts/BarlowCondensed-SemiBold.ttf") format("truetype"); font-display: block; }
+  :root {
+    --bg: #f3efe6; --panel: #fffdf8; --ink: #1a1a1a; --ink2: #5a574f; --line: #d9d3c4; --red: #d52b1e; --veil: rgba(243, 239, 230, .78);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #191816; --panel: #22211e; --ink: #f1ede4; --ink2: #b3ad9f; --line: #3a3833; --red: #e9493c; --veil: rgba(25, 24, 22, .78); }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  .app { display: grid; grid-template-columns: 320px 1fr; min-height: 100vh; }
+  aside { background: var(--panel); border-right: 1px solid var(--line); padding: 18px 18px 0; overflow-y: auto; max-height: 100vh; position: sticky; top: 0; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .hint { color: var(--ink2); font-size: 12px; margin: 0 0 14px; }
+  .hint.tight { margin: 6px 0 0; }
+  label { display: block; font-size: 12px; color: var(--ink2); margin: 12px 0 4px; }
+  input[type=text], select, textarea { width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 4px; background: transparent; color: var(--ink); font: inherit; }
+  select option { color: #1a1a1a; }
+  input[type=range] { width: 100%; accent-color: var(--red); }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  .steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-top: 4px; }
+  .steps button, .btn, .seg button { border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 4px; padding: 6px 0; cursor: pointer; font: inherit; }
+  .steps button.on, .seg button.on { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+  .steps button:disabled, select:disabled { opacity: .4; cursor: not-allowed; }
+  .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; }
+  .btn.primary { background: var(--red); color: #fff; border-color: var(--red); padding: 9px 0; width: 100%; font-weight: 600; }
+  .btn.big { padding: 12px 0; font-size: 15px; font-weight: 700; margin-top: 2px; }
+  .btn.ghost { width: 100%; padding: 7px 0; }
+  .stepdesc { font-size: 12px; color: var(--ink2); min-height: 36px; margin-top: 6px; }
+  .box { border: 1px solid var(--line); border-radius: 6px; padding: 2px 10px 10px; margin-top: 12px; }
+  .box.off .redrawOnly { display: none; }
+  .swatches { display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px; margin-top: 6px; }
+  .swatches button { aspect-ratio: 1; border-radius: 3px; border: 1px solid var(--line); cursor: pointer; padding: 0; position: relative; }
+  .swatches button.red { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--red); }
+  .swatches.yellow button.red { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px #E0B21C; }
+  .role { display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px; font-size: 11px; color: var(--ink2); text-align: center; margin-top: 2px; }
+  .status { font-size: 12px; color: var(--ink2); margin-top: 8px; min-height: 18px; }
+  .status.warn { color: var(--red); }
+  .meter { margin-top: 14px; font-size: 12px; }
+  .bar { display: flex; height: 14px; border-radius: 3px; overflow: hidden; margin: 4px 0 2px; gap: 2px; }
+  .bar span { display: block; height: 100%; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 10px; color: var(--ink2); }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  .dlbar { position: sticky; bottom: 0; z-index: 2; display: flex; gap: 8px; margin: 14px -18px 0; padding: 10px 18px 14px; background: var(--panel); border-top: 1px solid var(--line); }
+  .dlbar .btn { flex: 1; width: auto; margin: 0; padding: 9px 0; }
+  main { display: flex; align-items: center; justify-content: center; padding: 24px; position: relative; }
+  #view { max-width: 100%; max-height: calc(100vh - 48px); box-shadow: 0 1px 0 var(--line); cursor: crosshair; background: #fff; }
+  #view.pick { cursor: pointer; }
+  #busy { position: absolute; top: 34px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--panel); padding: 6px 14px; border-radius: 4px; font-size: 13px; display: none; }
+  body.busy #busy { display: block; }
+  body.dragging main::after { content: "松手换图"; position: absolute; inset: 12px; border: 3px dashed var(--red); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 700; color: var(--red); background: var(--veil); pointer-events: none; }
+  .checks label { display: inline-flex; align-items: center; gap: 6px; margin-right: 12px; color: var(--ink); }
+  @media (max-width: 760px) { .app { grid-template-columns: 1fr; } aside { position: static; max-height: none; overflow: visible; border-right: 0; border-top: 1px solid var(--line); } main { padding: 16px; order: -1; } #view { max-height: 70vh; } }
+  body.render .app { display: block; } body.render aside { display: none; } body.render main { padding: 0; } body.render #busy { display: none; }
+  body.render #view { max-width: none; max-height: none; box-shadow: none; display: block; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <h1>构成主义海报生成器</h1>
+    <p class="hint">三步：① 换成你的角色 ② 改标题和口号 ③ 下载。</p>
+    <button class="btn primary big" id="pickImg" type="button">换成你的角色（透明背景 PNG 最好）</button>
+    <input id="img" type="file" accept="image/*" hidden>
+    <p class="hint tight">也可以把图拖进来，或者 Ctrl+V 粘贴。图只在你的电脑里处理，不会上传。</p>
+    <div class="checks"><label><input type="checkbox" id="mirror"> 人物镜像（人物朝左时勾上：喇叭锥总是往右喊）</label></div>
+
+    <label for="title">主标题（2–6 字最好）</label>
+    <input id="title" type="text" value="来浮泽">
+    <label for="slogan">喊出来的口号（A 用，装进喇叭里）</label>
+    <input id="slogan" type="text" value="全员集合">
+    <div class="row">
+      <div><label for="sub">英文副标题</label><input id="sub" type="text" value="FREEDOM ZONE"></div>
+      <div><label for="info">角落信息</label><input id="info" type="text" value="2026.10 招新"></div>
+    </div>
+
+    <label>演示步骤</label>
+    <div class="steps" id="steps"></div>
+    <div class="stepdesc" id="stepdesc"></div>
+    <p class="hint tight" id="clickHint"></p>
+
+    <label for="preset">风格</label>
+    <select id="preset">
+      <option value="A">A 原典宣言：红黑纸 · 喊话</option>
+      <option value="B">B 至上主义：白底漂浮几何</option>
+      <option value="G">G 工业构成：混凝土 · 警示黄</option>
+    </select>
+
+    <div class="box" id="figBox">
+      <label>人物怎么处理</label>
+      <div class="seg" id="figMode"><button data-v="photo">去色照片</button><button data-v="redraw">形状重绘</button></div>
+      <div class="redrawOnly">
+        <p class="hint tight">把人物剪成纸 / 红 / 黑三色纸片：直边、平涂、没有渐变；头发、脸、衣服各剪成一大块，块和块之间留一条细黑线。</p>
+        <label for="eps">直边程度 <span id="epsV"></span>（越大折角越硬、块越整）</label>
+        <input id="eps" type="range" min="2" max="10" step="0.5" value="5">
+        <div class="checks"><label><input type="checkbox" id="lines"> 留线稿（眼睛、嘴、刘海的细线；不勾＝脸是一整块纸）</label></div>
+        <div id="redGroup">
+          <label id="redLabel">红色给谁</label>
+          <div class="seg" id="redMode"><button data-v="auto">自动</button><button data-v="pick">点选</button></div>
+          <div class="swatches" id="swatches"></div>
+          <div class="role" id="swRoles"></div>
+          <p class="hint tight" id="redHint">点上面的色块，或者在「点选」下直接点画面里人物身上的颜色：点一下变红，再点变回来。同一种颜色的地方会一起变。</p>
+        </div>
+        <label for="viewSel">看重绘过程</label>
+        <select id="viewSel">
+          <option value="poster">海报</option>
+          <option value="three">三步并排：原图 → 三色 → 剪纸</option>
+          <option value="steps">四步并排：原图 + ①–④</option>
+          <option value="k">① 色块</option>
+          <option value="3c">② 三色</option>
+          <option value="line">③ 分块（勾了「留线稿」时是线稿）</option>
+          <option value="shape">④ 直边</option>
+        </select>
+      </div>
+      <div class="status" id="status"></div>
+    </div>
+
+    <label for="angle">主斜轴角度 <span id="angleV"></span></label>
+    <input id="angle" type="range" min="-40" max="40" step="1" value="-16">
+
+    <div class="row">
+      <div><label for="size">画幅</label>
+        <select id="size"><option value="1080x1440">3:4 海报</option><option value="1920x1080">16:9 封面</option><option value="1080x1920">9:16 竖屏</option></select></div>
+      <div><label for="seed">纸纹（随便填，换颗粒）</label><input id="seed" type="text" value="1924"></div>
+    </div>
+
+    <label>检查（不会画进下载的图）</label>
+    <div class="checks">
+      <label><input type="checkbox" id="showAxis"> 画出主斜轴</label>
+      <label><input type="checkbox" id="showGray"> 去色看三档</label>
+    </div>
+
+    <div class="meter" id="meter"></div>
+    <p class="hint" style="margin-top:12px">键盘：0–4 切步骤 · a 主斜轴 · g 去色 · r 去色照片 / 形状重绘</p>
+    <p class="hint">代码 MIT 许可；字体 Noto Sans SC（Apache-2.0）、Barlow Condensed（OFL），见 fonts/；示例立绘不随 MIT 授权。</p>
+    <div class="dlbar">
+      <button class="btn primary" id="dl" type="button">下载 PNG</button>
+      <button class="btn ghost" id="dlSvg" type="button" title="矢量文件：Illustrator 能直接打开；进 AE 先在 Illustrator 里另存为 .ai">下载人物 SVG</button>
+    </div>
+  </aside>
+  <main><canvas id="view"></canvas><div id="busy">重绘中…</div></main>
+</div>
+
+<script src="redraw.js"></script>
+<script>
+// ---------- 配色：每种风格只留「一黑一亮一中间」三档，外加少量信号色 ----------
+const PALETTES = {
+  A: { paper: '#E8DCC0', red: '#D52B1E', black: '#1A1A1A', mid: '#8A8A80' },
+  B: { paper: '#F2EEE4', red: '#C8251F', black: '#111111', blue: '#1D3F8F', yellow: '#E0B21C', green: '#6B8E4E' },
+  G: { paper: '#CECECE', dark: '#535356', black: '#32332E', yellow: '#F2D024', red: '#D0312D' },
+};
+const STEP_TEXT = [
+  '第 0 步：平时最常见的做法。居中、渐变底、投影、圆角卡片，什么都放一点。',
+  '第 1 步：先找一根斜线。标题、色条都顺着它排队，其余元素横平竖直。',
+  '第 2 步：只留三个颜色。纸当亮、红当中间、黑当暗；人也剪成三色纸片：直边、平涂，不要渐变和投影。',
+  '第 3 步：每个形状都得有台词。圆框住她的脸＝看这里；喇叭从嘴里喊出去＝她在喊。',
+  '第 4 步：字也是形状。标题顶出画面，口号塞进喇叭、越往外越大，小字落在斜线的刻度上。',
+];
+const STEP2_PHOTO = '第 2 步：只留三个颜色。纸当亮、红当中间、黑当暗；人物去色提对比，去掉渐变和投影。';
+const VIEW_NAME = { src: '原图', k: '① 色块', '3c': '② 三色', line: '③ 分块', shape: '④ 直边' };
+const VIEW_NAME3 = { src: '原图', '3c': '分成三色', shape: '剪成纸片' };
+const VIEWS = ['poster', 'three', 'steps', 'k', '3c', 'line', 'shape'];
+const MULTI = { three: ['src', '3c', 'shape'], steps: ['src', 'k', '3c', 'line', 'shape'] };
+
+// ---------- 字体：标题用 CN Black；字库里没有的字（繁体、日文假名等）退到系统粗黑体 ----------
+const CN_FALLBACK = '"Noto Sans CJK SC", "Source Han Sans SC", "Microsoft YaHei", "PingFang SC", "Hiragino Sans", sans-serif';
+const cn = (px) => `900 ${px}px "CN Black", ${CN_FALLBACK}`;
+const cond = (px) => `${px}px Cond, "CN Black", ${CN_FALLBACK}`;
+
+// ---------- 小工具 ----------
+const $ = (id) => document.getElementById(id);
+const rad = (d) => d * Math.PI / 180;
+function rng(seedStr) { let h = 2166136261; for (const c of String(seedStr)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return () => { h ^= h << 13; h ^= h >>> 17; h ^= h << 5; return ((h >>> 0) % 100000) / 100000; }; }
+function hexToRgb(h) { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
+function lum([r, g, b]) { const f = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; }; const Y = 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); return Y > 0.008856 ? 116 * Math.cbrt(Y) - 16 : 903.3 * Y; }
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+function saveBlob(blob, name) { const a = document.createElement('a'), u = URL.createObjectURL(blob); a.href = u; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(u), 10000); }
+
+const SR = window.ShapeRedraw;
+const params = new URLSearchParams(location.search);
+const pnum = (k) => { const v = params.get(k); return v === null || v.trim() === '' ? NaN : +v; };
+const pdef = (k, d) => { const v = pnum(k); return Number.isFinite(v) ? v : d; };
+// 嘴（喇叭尖）默认在「脸 + 这个偏移」处（占人物宽 / 高），和 v0.1 一样；找到嘴或者点过嘴就用真实位置
+const MOUTH = { x: 0.06, y: 0.035 };
+const urlFace = (() => { // fx/fy：脸（红圆圆心）；mx/my：嘴（喇叭尖）。都是相对裁掉透明边后的人物图（0–1）
+  const fx = pnum('fx'), fy = pnum('fy'), mx = pnum('mx'), my = pnum('my');
+  const face = Number.isFinite(fx) ? { x: fx, y: Number.isFinite(fy) ? fy : 0.12 } : null;
+  if (Number.isFinite(mx)) { const m = { x: mx, y: Number.isFinite(my) ? my : 0.155 }; return { focus: face || { x: m.x - MOUTH.x, y: m.y - MOUTH.y }, mouth: m }; }
+  return face ? { focus: face, mouth: null } : null;
+})();
+const state = {
+  preset: ['A', 'B', 'G'].includes(params.get('preset')) ? params.get('preset') : 'A',
+  step: clamp(Math.round(pdef('step', 4)), 0, 4),
+  title: params.get('title') ?? '来浮泽',
+  slogan: params.get('slogan') ?? '全员集合',
+  sub: params.get('sub') ?? 'FREEDOM ZONE',
+  info: params.get('info') ?? '2026.10 招新',
+  angle: pdef('angle', -16),
+  size: ['1080x1440', '1920x1080', '1080x1920'].includes(params.get('size')) ? params.get('size') : '1080x1440',
+  seed: params.get('seed') || '1924',
+  showAxis: params.get('axis') === '1',
+  mirror: params.get('mirror') === '1',
+  showGray: params.get('gray') === '1',
+  focus: urlFace ? urlFace.focus : null, mouth: urlFace ? urlFace.mouth : null, faceSet: !!urlFace,
+  img: null, trim: null, isCutout: true, notice: '', warn: false,
+  // 旋钮（URL 可调）：喇叭锥半角（度）、红圆半径倍数、红条粗细倍数、黑带高度（占画面高）
+  wedge: pdef('wedge', 12), circle: pdef('circle', 1.2), bar: pdef('bar', 1.6), band: pdef('band', 0.075),
+  // 人物自带喇叭时：锥从离尖端 horn × 人物高 的地方才开始画（尖端 mx/my 给在她喇叭两条边延长线的交点），锥就是她喇叭的延长；0 = 从嘴开始（旧版）
+  horn: Math.max(0, pdef('horn', 0)),
+  // 形状重绘：人物处理（redraw / photo）、直边程度、红色给谁（auto / pick + 色块号）、看过程
+  fig: params.get('fig') === 'photo' || !SR ? 'photo' : 'redraw', figAuto: false,
+  eps: clamp(pdef('eps', SR ? SR.DEFAULTS.eps : 5), 2, 10),
+  lines: params.get('lines') === '1', // 线稿（眼睛、嘴、刘海）默认不画：脸是一整块纸
+  // 大块（URL 按占人物面积的百分数给）：merge = 三色图里多小的碎块并进四周（默认 0.4，0 = 不并）；pieces = 纸色分块多小的并掉（默认 0.6，0 = 不分块、不画分块线）
+  merge: SR ? clamp(pdef('merge', SR.DEFAULTS.mergeMin * 100), 0, 5) / 100 : 0,
+  pieces: SR ? clamp(pdef('pieces', SR.DEFAULTS.pieceMin * 100), 0, 5) / 100 : 0,
+  redMode: 'auto', redSet: null,
+  view: VIEWS.includes(params.get('view')) ? params.get('view') : 'poster', sizeBeforeMulti: null,
+};
+{ // red=auto | none | 3,5（点选的色块号）
+  const r = params.get('red');
+  if (r === 'none') { state.redMode = 'pick'; state.redSet = new Set(); }
+  else if (r && r !== 'auto') { state.redMode = 'pick'; state.redSet = new Set(r.split(',').map((s) => s.trim()).filter((s) => /^\d+$/.test(s)).map(Number).filter((k) => k < 9)); }
+}
+if (params.get('render') === '1') document.body.classList.add('render');
+
+// ---------- 人物图：去纯色背景、裁透明边、找脸和嘴 ----------
+const imgSize = (img) => ({ w: img.naturalWidth || img.width, h: img.naturalHeight || img.height });
+// 不透明的图（JPG、没有透明通道的 PNG）：四边大多是同一种颜色时，从四边把这种颜色灌掉（白底、纯色底都行）
+function removeBackground(d, W, H) {
+  const N = W * H, border = [];
+  for (let x = 0; x < W; x++) border.push(x, (H - 1) * W + x);
+  for (let y = 1; y < H - 1; y++) border.push(y * W, y * W + W - 1);
+  const bg = [0, 1, 2].map((c) => { const v = border.map((p) => d[p * 4 + c]).sort((a, b) => a - b); return v[v.length >> 1]; });
+  const T = 28, near = (p) => Math.abs(d[p * 4] - bg[0]) <= T && Math.abs(d[p * 4 + 1] - bg[1]) <= T && Math.abs(d[p * 4 + 2] - bg[2]) <= T;
+  let nb = 0; for (const p of border) if (near(p)) nb++;
+  if (nb < border.length * 0.6) return { ok: false };
+  const mark = new Uint8Array(N), st = new Int32Array(N); let sp = 0, removed = 0;
+  for (const p of border) if (!mark[p] && near(p)) { mark[p] = 1; st[sp++] = p; }
+  while (sp) {
+    const p = st[--sp], x = p % W; removed++;
+    if (x > 0 && !mark[p - 1] && near(p - 1)) { mark[p - 1] = 1; st[sp++] = p - 1; }
+    if (x < W - 1 && !mark[p + 1] && near(p + 1)) { mark[p + 1] = 1; st[sp++] = p + 1; }
+    if (p >= W && !mark[p - W] && near(p - W)) { mark[p - W] = 1; st[sp++] = p - W; }
+    if (p < N - W && !mark[p + W] && near(p + W)) { mark[p + W] = 1; st[sp++] = p + W; }
+  }
+  if (removed < N * 0.03 || removed > N * 0.97) return { ok: false };
+  for (let p = 0; p < N; p++) if (mark[p]) d[p * 4 + 3] = 0;
+  return { ok: true, bg, frac: removed / N };
+}
+// 脸和嘴：头部那一段（上 3%–35%）缩到人物高约 1400 的比例，交给 ShapeRedraw.findFace
+function findFaceRel(src, t) {
+  if (!SR || !SR.findFace) return null;
+  const s = Math.min(1, 1400 / t.h), y0 = Math.floor(t.h * 0.03), y1 = Math.ceil(t.h * 0.35);
+  const w = Math.max(8, Math.round(t.w * s)), h = Math.max(8, Math.round((y1 - y0) * s));
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d', { willReadFrequently: true }); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
+  x.drawImage(src, t.x, t.y + y0, t.w, y1 - y0, 0, 0, w, h);
+  const r = SR.findFace(x.getImageData(0, 0, w, h).data, w, h);
+  if (!r) return null;
+  const ry = (v) => (y0 + v * (y1 - y0) / h) / t.h, [bx0, by0, bx1, by1] = r.box;
+  return { focus: { x: (bx0 + bx1) / 2 / w, y: ry(by0 + 0.45 * (by1 - by0)) }, mouth: { x: r.mouth[0] / w, y: ry(r.mouth[1]) }, mouthFound: r.mouthFound };
+}
+function analyseImage(img) {
+  const { w: W, h: H } = imgSize(img);
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(img, 0, 0);
+  const id = x.getImageData(0, 0, W, H), d = id.data; // 直接双击打开（file://）时这里会抛错：浏览器不让读图片像素
+  let transparent = 0;
+  for (let i = 3; i < d.length; i += 4) if (d[i] < 20) transparent++;
+  let isCutout = transparent > W * H * 0.08, source = img, bgRemoved = false;
+  if (!isCutout) { const r = removeBackground(d, W, H); if (r.ok) { x.putImageData(id, 0, 0); source = c; isCutout = bgRemoved = true; } }
+  // 外框：alpha > 0 的像素（同 PIL getbbox）
+  let minX = W, minY = H, maxX = -1, maxY = -1;
+  for (let y = 0; y < H; y++) {
+    const o = y * W * 4; let l = -1, r = -1;
+    for (let xx = 0; xx < W; xx++) if (d[o + xx * 4 + 3] > 0) { if (l < 0) l = xx; r = xx; }
+    if (l >= 0) { if (l < minX) minX = l; if (r > maxX) maxX = r; if (minY > y) minY = y; maxY = y; }
+  }
+  if (maxX < 0) { const e = new Error('empty image'); e.code = 'empty'; throw e; }
+  const trim = isCutout ? { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 } : { x: 0, y: 0, w: W, h: H };
+  // 脸：先找肤色里带嘴的那块；找不到就按 v0.1 的老办法（上部 6%–16% 行的不透明像素重心）；照片取上三分之一中间
+  let focus = { x: 0.5, y: 0.2 }, mouth = null, faceFound = false;
+  if (isCutout) {
+    let sx = 0, n = 0; const y0 = trim.y + trim.h * 0.06, y1 = trim.y + trim.h * 0.16;
+    for (let y = Math.floor(y0); y < y1; y += 2) for (let xx = trim.x; xx < trim.x + trim.w; xx += 2) if (d[(y * W + xx) * 4 + 3] > 128) { sx += xx; n++; }
+    focus = { x: n ? (sx / n - trim.x) / trim.w : 0.5, y: 0.12 };
+    const f = findFaceRel(source, trim);
+    if (f) { focus = f.focus; mouth = f.mouth; faceFound = true; }
+  }
+  return { img: source, trim, isCutout, bgRemoved, focus, mouth, faceFound };
+}
+function loadImage(src) {
+  return new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(Object.assign(new Error('decode failed'), { code: 'decode' })); im.src = src; });
+}
+// 人物镜像：喇叭锥固定往右喊，朝左的人物先左右翻过来；a.raw 留着原图，来回切换不用重新读文件
+function mirrored(im) {
+  const c = document.createElement('canvas'); c.width = im.naturalWidth || im.width; c.height = im.naturalHeight || im.height;
+  const x = c.getContext('2d'); x.translate(c.width, 0); x.scale(-1, 1); x.drawImage(im, 0, 0);
+  return loadImage(c.toDataURL('image/png'));
+}
+async function loadSource(src) { const raw = await loadImage(src); const a = analyseImage(state.mirror ? await mirrored(raw) : raw); a.raw = raw; return a; }
+// 一次性换上新图（读图、分析都成功以后才动 state）
+function applyImage(a) {
+  state.img = a.img; state.raw = a.raw || a.img; state.trim = a.trim; state.isCutout = a.isCutout;
+  if (!state.faceSet) { state.focus = a.focus; state.mouth = a.mouth; }
+  state.warn = false; state.notice = a.bgRemoved ? '这张图的纯色背景已经自动去掉了。' : '';
+  if (!a.isCutout) { // 带背景的照片：剪纸会连背景一起剪，先退回去色照片
+    if (state.fig === 'redraw') { state.fig = 'photo'; state.figAuto = true; }
+    state.warn = true; state.notice = '这张图带背景，剪纸会连背景一起剪：先抠图再上传。现在先用去色照片。';
+  } else if (state.figAuto) { state.fig = 'redraw'; state.figAuto = false; }
+  RD.err = null;
+}
+function say(msg, warn) { state.notice = msg; state.warn = !!warn; renderFigPanel(); }
+let loadSeq = 0;
+async function loadFile(f) {
+  if (!f) return;
+  const seq = ++loadSeq, url = URL.createObjectURL(f);
+  say('读图中…');
+  try {
+    const a = await loadSource(url);
+    if (seq !== loadSeq) return; // 读的时候又换了一张：以后一张为准
+    state.faceSet = false; state.focus = state.mouth = null; state.redMode = 'auto'; state.redSet = null;
+    applyImage(a);
+    render();
+  } catch (e) {
+    console.error(e);
+    if (seq === loadSeq) say(e && e.code === 'empty' ? '图里没有人物（整张都是透明的）。' : '这张图打不开：换 PNG / JPG / WebP 试试。', true);
+  } finally { URL.revokeObjectURL(url); }
+}
+
+// ---------- 纹理：旧纸 / 混凝土颗粒（只用噪点，不用渐变）----------
+const grainCache = new Map();
+function grain(W, H, strength, seed) {
+  const key = `${W}x${H}:${strength}:${seed}`;
+  if (grainCache.has(key)) return grainCache.get(key);
+  const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+  const im = x.createImageData(W, H); const r = rng(seed);
+  for (let i = 0; i < im.data.length; i += 4) { const v = r() < 0.5 ? 0 : 255; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = r() * strength; }
+  x.putImageData(im, 0, 0);
+  grainCache.set(key, c); while (grainCache.size > 3) grainCache.delete(grainCache.keys().next().value); // 只留最近 3 张
+  return c;
+}
+
+// ---------- 画人物（原图模式）：去色 + 提对比，像印刷照片 ----------
+function figureCanvas(mode, w, h) {
+  const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h));
+  const x = c.getContext('2d'); const t = state.trim;
+  if (mode === 'gray') x.filter = 'grayscale(1) contrast(2.1) brightness(0.92)';
+  x.drawImage(state.img, t.x, t.y, t.w, t.h, 0, 0, c.width, c.height);
+  if (mode === 'silhouette') { x.globalCompositeOperation = 'source-in'; x.fillStyle = '#111'; x.fillRect(0, 0, c.width, c.height); }
+  return c;
+}
+
+// ---------- 形状重绘：缓存 + 分段重算 ----------
+// A 段（平滑 + 色块，最慢）只在换图时算；红色给谁 → 三色、并碎块、分块；脸的位置 → 线稿；直边程度 → 拉直。改标题、角度、画幅都不重算。
+const RD = { img: null, B: null, A: null, job: null, err: null, lyKey: null, Ly: null, lnKey: null, Ln: null, shKey: null, shapes: null, paths: null, roles: null, ms: 0, t: null, workers: 0 };
+let figXforms = []; // 这一帧里人物（处理坐标）→ 画布坐标的变换，给点选颜色用
+let pool;
+const useWorkers = params.has('workers') ? params.get('workers') === '1' : params.get('render') !== '1';
+function getPool() {
+  if (pool === undefined) pool = useWorkers && SR ? SR.makePool(clamp((navigator.hardwareConcurrency || 4) - 1, 2, 6)) : null;
+  return pool;
+}
+function needRedraw() {
+  if (state.fig !== 'redraw' || !SR || !state.img) return false;
+  if (state.view !== 'poster') return true;
+  if (state.step === 0) return false;
+  return state.preset === 'A' ? state.step >= 2 : true;
+}
+const redrawReady = () => !!(RD.A && RD.img === state.img);
+// 处理尺寸：人物高 1400（同参考实现）；特别宽的图把总像素限制在 260 万以内，免得又慢又占内存
+function prepareFromImage(img, t) {
+  let Hp = SR.DEFAULTS.height, Wp = Math.max(8, Math.floor(t.w * Hp / t.h));
+  const MAXPX = 2.6e6;
+  if (Wp * Hp > MAXPX) { const k = Math.sqrt(MAXPX / (Wp * Hp)); Wp = Math.max(8, Math.floor(Wp * k)); Hp = Math.max(8, Math.floor(Hp * k)); }
+  const c = document.createElement('canvas'); c.width = Wp; c.height = Hp;
+  const x = c.getContext('2d', { willReadFrequently: true });
+  x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
+  x.drawImage(img, t.x, t.y, t.w, t.h, 0, 0, Wp, Hp);
+  return SR.prepare(x.getImageData(0, 0, Wp, Hp).data, Wp, Hp);
+}
+function autoRedSet() { return new Set(SR.autoRoles(RD.A.clusters).map((r, k) => (r === 'red' ? k : -1)).filter((k) => k >= 0)); }
+function currentRoles() {
+  if (state.redMode === 'pick') { if (!state.redSet) state.redSet = autoRedSet(); return SR.rolesFromSet(RD.A.clusters, state.redSet); }
+  return SR.autoRoles(RD.A.clusters);
+}
+// 脸框（线稿：框里连短线也留）：用户点过嘴或 URL 给了 fx/fy 时以脸为中心，宽 ±0.18、高 ±0.12（占人物高度）；
+// 否则同参考实现的默认：人物最上面 24% 的行都算脸
+function faceBox() {
+  if (!state.faceSet) return null;
+  const f = state.focus, B = RD.B;
+  return [f.x * B.W - 0.18 * B.H, f.y * B.H - 0.12 * B.H, f.x * B.W + 0.18 * B.H, f.y * B.H + 0.12 * B.H];
+}
+function refreshShapes() {
+  const roles = currentRoles(), lyKey = `${roles.join(',')}|${state.merge}|${state.pieces}`;
+  if (RD.lyKey !== lyKey) { RD.Ly = SR.layers(RD.B, RD.A, roles, { mergeMin: state.merge, pieceMin: state.pieces }); RD.lyKey = lyKey; RD.shKey = null; RD.cache3c = null; RD.cachePiece = null; }
+  const needLn = state.lines; // 线稿只在要画（lines=1）时才算；不画时「看重绘过程」的 ③ 显示分块
+  const fb = faceBox(), lnKey = needLn ? (fb ? fb.map(Math.round).join(',') : 'head') : 'off';
+  if (RD.lnKey !== lnKey) { RD.Ln = needLn ? SR.lines(RD.B, RD.A, fb) : null; RD.lnKey = lnKey; RD.cacheLine = null; }
+  const shKey = `${lyKey}|${state.lines ? lnKey : 'nolines'}|${state.eps}`;
+  if (RD.shKey !== shKey) {
+    RD.shapes = SR.shapes(RD.Ly, state.lines ? RD.Ln : null, state.eps);
+    RD.paths = RD.shapes.map((sh) => {
+      const p = new Path2D();
+      if (sh.piece) { // 分块线：开放折线，描边不填色
+        for (const q of sh.polys) { const r = q.pts; p.moveTo(r[0], r[1]); for (let i = 2; i < r.length; i += 2) p.lineTo(r[i], r[i + 1]); if (q.closed) p.closePath(); }
+        return { c: sh.c, piece: true, width: sh.width, p };
+      }
+      for (const r of sh.rings) { p.moveTo(r[0], r[1]); for (let i = 2; i < r.length; i += 2) p.lineTo(r[i], r[i + 1]); p.closePath(); }
+      return { c: sh.c, outline: !!sh.outline, line: !!sh.line, p };
+    });
+    RD.shKey = shKey;
+  }
+  RD.roles = roles;
+}
+function setBusy(p) {
+  document.body.classList.toggle('busy', p !== null);
+  if (p !== null) { const t = `重绘中… ${Math.round(p * 100)}%`; $('busy').textContent = t; $('status').textContent = t; $('status').classList.remove('warn'); }
+}
+// 先让「重绘中…」画到屏幕上再开算；无头出图（render=1）不用等
+const nextFrame = () => new Promise((r) => { if (document.body.classList.contains('render')) return r(); let done = false; const go = () => { if (!done) { done = true; setTimeout(r, 0); } }; requestAnimationFrame(go); setTimeout(go, 50); });
+function startRedraw() {
+  if (RD.job) return;
+  const img = state.img, trim = state.trim, t0 = performance.now();
+  setBusy(0);
+  RD.job = (async () => {
+    await nextFrame(); // 先让「重绘中…」显示出来
+    const t1 = performance.now();
+    const B = prepareFromImage(img, trim);
+    const t2 = performance.now();
+    const A = await SR.analyzeAsync(B, {}, (p) => setBusy(p * 0.92), getPool());
+    if (state.img !== img) return; // 算的时候换了图：丢掉，render 会重新开始
+    Object.assign(RD, { img, B, A, lyKey: null, lnKey: null, shKey: null, cacheK: null, cache3c: null, cacheLine: null, cachePiece: null });
+    if (state.redMode === 'pick' && !state.redSet) state.redSet = autoRedSet();
+    setBusy(0.95); await nextFrame(); // 三色 + 描边在主线程一口气算完：先把进度刷到 95%
+    const t3 = performance.now();
+    refreshShapes();
+    const t4 = performance.now();
+    RD.ms = t4 - t0; RD.workers = A.t.workers || 0;
+    RD.t = Object.assign({ wait: t1 - t0, prepare: t2 - t1 }, A.t, { analyze: t3 - t2, layers: RD.Ly.ms, pieces: RD.Ly.pieces ? RD.Ly.pieces.ms : 0, lines: RD.Ln ? RD.Ln.ms : 0, shapes: RD.shapes.ms, rest: t4 - t3 });
+  })().catch((e) => {
+    if (state.img !== img) return; // 旧图的错误：不管
+    RD.err = { img, e }; console.error(e);
+    state.notice = '重绘失败了，换张图试试（或者用去色照片）。'; state.warn = true;
+  }).finally(() => { RD.job = null; setBusy(null); render(); });
+}
+
+// 按缓存的形状画人物：(x, y, w, h) 是人物在画布上的外框；pal 决定三种颜色。顺序：外轮廓先描 7px 黑边（直角接头）→ 填纸
+// → 分块线 → 红块、黑块各描一圈同色 5px 细边再填色 → 线稿（留线稿时）→ 外轮廓只在外形外面再描一遍
+function drawShapesFigure(ctx, x, y, w, h, pal, opt = {}) {
+  ctx.save();
+  ctx.translate(x, y); ctx.scale(w / RD.B.W, h / RD.B.H);
+  figXforms.push(ctx.getTransform());
+  const sil = new Path2D(); for (const s of RD.paths) if (s.outline) sil.addPath(s.p);
+  if (!opt.silOnly) { ctx.lineJoin = 'miter'; ctx.miterLimit = 4; ctx.lineWidth = SR.DEFAULTS.outline; ctx.strokeStyle = pal.black; ctx.stroke(sil); }
+  ctx.fillStyle = pal.paper; ctx.fill(sil, 'evenodd');
+  if (!opt.silOnly) {
+    // 分块线（头发、脸、衣服这些纸色大块之间）：只画在外形里面，和外轮廓露出来的那一半一样粗；压在红、黑块下面的部分被盖住
+    ctx.save(); ctx.clip(sil, 'evenodd'); ctx.lineJoin = 'miter'; ctx.miterLimit = 4; ctx.lineCap = 'round'; ctx.strokeStyle = pal.black;
+    for (const s of RD.paths) if (s.piece) { ctx.lineWidth = s.width; ctx.stroke(s.p); }
+    ctx.restore();
+    // 红块、黑块先描一圈同色细边（外扩 2.5px，被后面的填色盖住的部分看不见）再填色：补上色块和外形边、色块和色块之间
+    // 拉直以后剩下的纸色细缝；红黑交界不动（细边都在填色下面）。伸出外形的细边最后被外轮廓盖住
+    ctx.lineJoin = 'round'; ctx.lineWidth = 5;
+    for (const c of ['black', 'red']) { ctx.strokeStyle = pal[c]; for (const s of RD.paths) if (s.c === c && !s.outline && !s.line && !s.piece) ctx.stroke(s.p); }
+    for (const s of RD.paths) if (!s.outline && !s.piece) { ctx.fillStyle = pal[s.c]; ctx.fill(s.p, 'evenodd'); }
+    // 外轮廓只在外形外面再描一遍：盖住伸出外形的红、黑细边，外轮廓露出来的粗细和颜色不变
+    ctx.save(); const outside = new Path2D(); outside.rect(-1e5, -1e5, 2e5, 2e5); outside.addPath(sil); ctx.clip(outside, 'evenodd');
+    ctx.lineJoin = 'miter'; ctx.miterLimit = 4; ctx.lineWidth = SR.DEFAULTS.outline; ctx.strokeStyle = pal.black; ctx.stroke(sil);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+const figReady = () => state.fig === 'redraw' && redrawReady() && RD.paths;
+
+// 沿方向画一行字（基线中点在 p，可设字号与字距）
+function textAlong(ctx, str, p, angleDeg, font, color, opts = {}) {
+  ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(rad(angleDeg));
+  ctx.font = font; ctx.fillStyle = color; ctx.textBaseline = opts.baseline || 'alphabetic';
+  ctx.textAlign = opts.align || 'left';
+  if (opts.spacing) ctx.letterSpacing = opts.spacing + 'px';
+  if (opts.scaleX) ctx.scale(opts.scaleX, 1);
+  ctx.fillText(str, 0, 0); ctx.restore();
+}
+function measure(ctx, str, font, spacing = 0) { ctx.save(); ctx.font = font; ctx.letterSpacing = spacing + 'px'; const w = ctx.measureText(str).width; ctx.restore(); return w; }
+
+// ---------- 第 0 步：常见的「默认审美」----------
+function drawBefore(ctx, W, H, S) {
+  const g = ctx.createLinearGradient(0, 0, W, H); g.addColorStop(0, '#ffd6e8'); g.addColorStop(1, '#c9e4ff');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(255,255,255,.45)';
+  for (const [x, y, r] of [[.18, .2, .09], [.85, .15, .06], [.8, .78, .12], [.12, .85, .05]]) { ctx.beginPath(); ctx.arc(x * W, y * H, r * Math.min(W, H), 0, 7); ctx.fill(); }
+  const fh = H * 0.72, fw = fh * state.trim.w / state.trim.h;
+  ctx.save(); ctx.shadowColor = 'rgba(80,60,120,.35)'; ctx.shadowBlur = 40; ctx.shadowOffsetY = 18;
+  ctx.drawImage(figureCanvas('color', fw, fh), (W - fw) / 2, H * 0.08); ctx.restore();
+  const cw = Math.min(W * 0.78, 760), ch = H * 0.15, cx = (W - cw) / 2, cy = H * 0.76;
+  ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.18)'; ctx.shadowBlur = 30; ctx.fillStyle = 'rgba(255,255,255,.88)';
+  ctx.beginPath(); ctx.roundRect(cx, cy, cw, ch, 28); ctx.fill(); ctx.restore();
+  const tg = ctx.createLinearGradient(cx, 0, cx + cw, 0); tg.addColorStop(0, '#ff5fa2'); tg.addColorStop(1, '#5a8cff');
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = tg; ctx.font = cn(Math.round(ch * 0.5));
+  ctx.fillText(S.title, W / 2, cy + ch * 0.42);
+  ctx.fillStyle = '#7a7aa0'; ctx.font = cond(Math.round(ch * 0.16)); ctx.letterSpacing = '6px';
+  ctx.fillText(`${S.sub} · ${S.info}`, W / 2, cy + ch * 0.8); ctx.letterSpacing = '0px';
+}
+
+// ---------- 喇叭锥：尖端在 M，沿主轴张开，锥身后接一段喇叭口 ----------
+// horn = 0：尖端就是嘴，锥从嘴开始、压在人物上面（旧版）。horn > 0：人物自带喇叭，M 是她喇叭两条边延长线的交点，
+// 锥从离 M 有 hornD 的地方（她喇叭口）才开始，画在人物后面，两条边就是她喇叭两条边的延长线。
+// 口号：整句先排成一行（离屏），按字切成几格，每格用一个单应变换（透视）贴进锥里的一段梯形。梯形的上下沿是锥的两条边
+// 各往里收一个固定边距，所以字的上下沿和锥边平行；每格的长度按这个字原来的宽高比定（字不压扁），一格比一格大。
+// （整句只用一个单应变换的话，长度对上以后第一个字会被压窄、最后一个字被拉宽：两个字、16° 的锥约 0.8 / 1.5 倍，四个字、12° 的锥约 0.6 / 2.9 倍）
+const SLOGAN_PX = 240; // 排版（量每个字的宽高比）用的字号；真正贴进锥里时按最后一个字的实际高度另排一行，不放大
+const sloganCache = new Map();
+function sloganLine(str, color, px = SLOGAN_PX) {
+  const key = `${str}|${color}|${px}`;
+  if (sloganCache.has(key)) return sloganCache.get(key);
+  const c = document.createElement('canvas'), x = c.getContext('2d', { willReadFrequently: true });
+  x.font = cn(px);
+  const m = x.measureText(str), pad = Math.ceil(px * 0.15);
+  const L = Math.ceil(m.actualBoundingBoxLeft) + pad, A = Math.ceil(m.actualBoundingBoxAscent) + pad;
+  c.width = Math.max(1, L + Math.ceil(m.actualBoundingBoxRight) + pad); c.height = Math.max(1, A + Math.ceil(m.actualBoundingBoxDescent) + pad);
+  x.font = cn(px); x.fillStyle = color; x.textBaseline = 'alphabetic'; x.textAlign = 'left';
+  x.fillText(str, L, A);
+  // 墨迹外框（字真正画到哪儿），口号的上下沿就是它
+  const d = x.getImageData(0, 0, c.width, c.height).data;
+  let x0 = c.width, x1 = -1, y0 = c.height, y1 = -1;
+  for (let yy = 0; yy < c.height; yy++) for (let xx = 0, o = yy * c.width * 4 + 3; xx < c.width; xx++, o += 4) if (d[o] > 8) { if (xx < x0) x0 = xx; if (xx > x1) x1 = xx; if (yy < y0) y0 = yy; y1 = yy; }
+  let v = null;
+  if (x1 >= 0) {
+    const w = x1 - x0 + 1, h = y1 - y0 + 1, chars = [...str], cells = [0];
+    for (let i = 1; i < chars.length; i++) { const b = L + x.measureText(chars.slice(0, i).join('')).width - x0; if (b > cells[cells.length - 1] + h * 0.05 && b < w - h * 0.05) cells.push(b); }
+    cells.push(w);
+    v = { c, sx: x0, sy: y0, w, h, cells, px };
+  }
+  sloganCache.set(key, v); while (sloganCache.size > 4) sloganCache.delete(sloganCache.keys().next().value); // 只留最近几行
+  return v;
+}
+// 人物自带喇叭时，口号要从她的喇叭外面开始：沿锥轴往外扫，人物（不透明像素）在锥里最远到哪儿
+const clearCache = { key: null, A: null, w: 0, h: 0 };
+function figureClear(g, M, u, nrm, tn, d0, dMax) {
+  const t = state.trim, w = Math.max(8, Math.round(g.fw / 2)), h = Math.max(8, Math.round(g.fh / 2));
+  if (clearCache.key !== state.img || clearCache.w !== w || clearCache.h !== h) {
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(state.img, t.x, t.y, t.w, t.h, 0, 0, w, h);
+    let A = null; try { A = x.getImageData(0, 0, w, h).data; } catch (e) { console.error(e); } // 读不了像素（file:// 下的本地图）：口号就从 horn 处开始
+    Object.assign(clearCache, { key: state.img, A, w, h });
+  }
+  if (!clearCache.A) return d0;
+  const A = clearCache.A, hit = (px, py) => { const X = Math.floor((px - g.fx) * w / g.fw), Y = Math.floor((py - g.fy) * h / g.fh); return X >= 0 && Y >= 0 && X < w && Y < h && A[(Y * w + X) * 4 + 3] > 128; };
+  let last = d0, empty = 0;
+  for (let d = d0; d < dMax; d += 2) {
+    let any = false;
+    for (let q = -tn * d; q <= tn * d && !any; q += 2) any = hit(M.x + u.x * d + nrm.x * q, M.y + u.y * d + nrm.y * q);
+    if (any) { last = d; empty = 0; } else if ((empty += 2) > Math.max(16, d0 * 0.12)) break; // 出了喇叭口一段还没碰到人物：到头了
+  }
+  return last;
+}
+// 剪纸人物的外形是拉直过的（直边程度 eps），她喇叭的两条边和量出来的理想边会差 1–3px：锥的两条边各自平移到
+// 「人物外形在喇叭口（离尖端 hornD）那一处」，两条黑边才在接缝处对齐、没有台阶。只挪平行线，角度不动；最多挪 0.6% 人物高
+function hornSnap(M, aDeg, tn, hornD, g) {
+  const u = { x: Math.cos(rad(aDeg)), y: Math.sin(rad(aDeg)) }, nrm = { x: -u.y, y: u.x };
+  const sx = g.fw / RD.B.W, sy = g.fh / RD.B.H, lim = Math.max(3, g.fh * 0.006), best = { '-1': null, '1': null };
+  for (const sh of RD.shapes) if (sh.outline) for (const r of sh.rings) {
+    const n = r.length >> 1;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n, ax = g.fx + r[i * 2] * sx - M.x, ay = g.fy + r[i * 2 + 1] * sy - M.y, bx = g.fx + r[j * 2] * sx - M.x, by = g.fy + r[j * 2 + 1] * sy - M.y;
+      const da = ax * u.x + ay * u.y, db = bx * u.x + by * u.y;
+      if ((da - hornD) * (db - hornD) > 0 || da === db) continue; // 这条边不跨过喇叭口
+      const wa = ax * nrm.x + ay * nrm.y, wb = bx * nrm.x + by * nrm.y, w = wa + (wb - wa) * (hornD - da) / (db - da);
+      for (const sg of [-1, 1]) { const off = sg * w - tn * hornD; if (Math.abs(off) <= lim && (best[sg] === null || Math.abs(off) < Math.abs(best[sg]))) best[sg] = off; }
+    }
+  }
+  return { up: best['-1'] || 0, lo: best['1'] || 0 };
+}
+// o.hornD：锥从离尖端多远开始（0 = 从嘴开始）；o.clear：口号从哪儿开始（人物喇叭外面）；o.snap：两条边各往外平移多少（hornSnap）；
+// o.floor：尖端在「标题区上沿」下面多远（负数 = 在上面；已含留白）。锥和喇叭口都不能伸进标题区：标题下面那条纸色带会把它切掉
+function coneGeometry(M, aDeg, half, S, W, H, R, o = {}) {
+  const u = { x: Math.cos(rad(aDeg)), y: Math.sin(rad(aDeg)) }, nrm = { x: -u.y, y: u.x };
+  const tn = Math.tan(half), BELL = 0.16, FLARE = 1.5; // 喇叭口长 = 锥身 16%，口沿比锥身末端宽 50%
+  const hornD = o.hornD || 0, up = (o.snap && o.snap.up) || 0, lo = (o.snap && o.snap.lo) || 0;
+  // 喇叭口两个角都要落在画面里（留 3% 边）：解出锥身最长能到多远
+  const k = tn * FLARE / (1 + BELL), mg = Math.min(W, H) * 0.03;
+  let Lmax = Infinity;
+  for (const sg of [1, -1]) {
+    const vx = u.x + sg * nrm.x * k, vy = u.y + sg * nrm.y * k;
+    if (vx > 1e-6) Lmax = Math.min(Lmax, (W - mg - M.x) / vx); else if (vx < -1e-6) Lmax = Math.min(Lmax, (mg - M.x) / vx);
+    if (vy > 1e-6) Lmax = Math.min(Lmax, (H - mg - M.y) / vy); else if (vy < -1e-6) Lmax = Math.min(Lmax, (mg - M.y) / vy);
+  }
+  // 标题区：锥轴和标题同一根主轴，所以喇叭口下角离标题区上沿的距离只看它离轴多远：floor + tn × Lb × FLARE + lo ≤ 0
+  const LbFloor = o.floor !== undefined && o.floor + lo < 0 ? -(o.floor + lo) / (tn * FLARE) : Infinity;
+  const LbMax = Math.min(Lmax / (1 + BELL), LbFloor), sMin = Math.min(W, H) * 0.022;
+  const T = S.slogan ? sloganLine(S.slogan, o.color || '#000') : null;
+  const aspects = T ? T.cells.slice(1).map((b, i) => (b - T.cells[i]) / T.h) : [1, 1, 1, 1]; // 没有口号：锥长按四个字算（同旧版）
+  // 口号的包络：锥边往里收 margin（垂直距离），收完的两条线交在 dv（离 M 的距离）。margin ≥ 起点锥半宽的 12%，且 ≥ 短边 0.4%
+  const MU = 0.12, mAbs = Math.min(W, H) * 0.004, sinH = Math.sin(half);
+  const dvMin = (ds) => Math.max(MU * ds, mAbs / sinH);
+  const clear = hornD > 0 ? Math.max(hornD, o.clear || 0) : 0;
+  // horn > 0 时口号起点固定在她的喇叭外面，字号只取决于后面还有多长：先按「喇叭口在画面里」排；字和锥边之间空太多
+  // （贴边程度 < 0.75）就让锥身伸长到锥边出画面为止，喇叭口可以出血（标题区那一侧不出血）。Dtext：两条锥边离开画面（留 3% 边）的距离
+  let Dtext = Infinity;
+  for (const sg of [1, -1]) {
+    const vx = u.x + sg * nrm.x * tn, vy = u.y + sg * nrm.y * tn;
+    if (vx > 1e-6) Dtext = Math.min(Dtext, (W - mg - M.x) / vx); else if (vx < -1e-6) Dtext = Math.min(Dtext, (mg - M.x) / vx);
+    if (vy > 1e-6) Dtext = Math.min(Dtext, (H - mg - M.y) / vy); else if (vy < -1e-6) Dtext = Math.min(Dtext, (mg - M.y) / vy);
+  }
+  Dtext = Math.min(Dtext, LbFloor);
+  const layout = (D) => {
+    let best = null;
+    // sq：字的横向比例。先 1（原宽）；字和锥边之间空太多时最多压到 0.8 换贴边；第一个字还小于短边 2.2% 时继续压（最低 0.35）
+    for (let sq = 1; sq > 0.34; sq -= 0.05) {
+      const rs = aspects.map((a) => { const kk = Math.min(0.9, a * sq * tn); return (1 + kk) / (1 - kk); });
+      const Rt = rs.reduce((p, r) => p * r, 1);
+      let ds, x0;
+      if (hornD > 0) { ds = clear; x0 = Math.min(ds - dvMin(ds), (D - ds) / (Rt - 1)); }
+      else { ds = Math.min(R * 0.42, D / (MU + (1 - MU) * Rt)); x0 = ds - dvMin(ds); } // 同旧版：第一个字离嘴 ≤ 红圆半径的 0.42
+      const cand = { sq, rs, Rt, ds, x0, h0: 2 * tn * x0, fill: x0 / (ds - dvMin(ds)) };
+      if (!best || cand.h0 > best.h0) best = cand;
+      if (cand.h0 >= sMin && (cand.fill > 0.999 || sq < 0.8 + 1e-6)) { best = cand; break; }
+    }
+    return best;
+  };
+  let best = layout(LbMax / 1.03); // 口号末端后面留一点再接喇叭口
+  if (hornD > 0 && best.fill < 0.75 && Dtext / 1.03 > LbMax / 1.03) { const b2 = layout(Dtext / 1.03); if (b2.h0 > best.h0) best = b2; }
+  if (best.h0 < sMin && hornD > 0) { // 人物喇叭外面几乎没地方了：口号照最小字号排，锥伸出画面
+    const x0 = sMin / (2 * tn), rs = aspects.map((a) => { const kk = Math.min(0.9, a * tn); return (1 + kk) / (1 - kk); });
+    best = { sq: 1, rs, Rt: rs.reduce((p, r) => p * r, 1), ds: clear, x0, h0: sMin };
+  }
+  const { sq, rs, ds, x0 } = best, dv = ds - x0, bounds = [x0];
+  for (const r of rs) bounds.push(bounds[bounds.length - 1] * r);
+  const de = dv + bounds[bounds.length - 1];
+  const Lb = Math.max(de + 0.04 * (bounds[bounds.length - 1] - bounds[bounds.length - 2]), hornD * 1.05), Le = Lb * (1 + BELL);
+  // 两条边：下边 w = tn·d + lo，上边 w = −(tn·d + up)（snap 平移过的平行线）
+  const P = (d, w) => ({ x: M.x + u.x * d + nrm.x * w, y: M.y + u.y * d + nrm.y * w });
+  const poly = hornD > 0
+    ? [P(hornD, tn * hornD + lo), P(Lb, tn * Lb + lo), P(Le, tn * Lb * FLARE + lo), P(Le, -tn * Lb * FLARE - up), P(Lb, -tn * Lb - up), P(hornD, -tn * hornD - up)]
+    : [P(0, 0), P(Lb, tn * Lb), P(Le, tn * Lb * FLARE), P(Le, -tn * Lb * FLARE), P(Lb, -tn * Lb)];
+  // floorGap：喇叭口下角离标题区上沿（已留 1.5% 短边）还有多远，≥ 0 就没伸进标题区
+  const floorGap = o.floor !== undefined ? -(o.floor + tn * Lb * FLARE + lo) : null;
+  return { poly, M, u, nrm, aDeg, tn, hornD, Lb, Le, snap: { up, lo }, floorGap, text: T && { T, str: S.slogan, color: o.color || '#000', tn, dv, ds, de, bounds, sq, h0: 2 * tn * x0, h1: 2 * tn * bounds[bounds.length - 1] } };
+}
+// 画锥。behind = 人物画在锥上面（horn > 0）：剪纸人物外轮廓有一圈黑边，锥也描一圈同样粗的黑边，锥边才和描了边的喇叭边对齐。
+// 黑边只描两条长边和喇叭口（开放折线、平头），不描喇叭口那一头的横边：横边藏在人物喇叭后面，描了它的角会从接缝处冒出来。
+// 去色照片是正片叠底画上去的，锥得先挖掉人物占的地方，不然压在锥上的那部分人物会整块变黑
+function drawCone(ctx, cone, P, behind) {
+  const path = new Path2D(); cone.poly.forEach((p, i) => (i ? path.lineTo(p.x, p.y) : path.moveTo(p.x, p.y))); path.closePath();
+  ctx.save(); ctx.fillStyle = P.black;
+  if (!behind) ctx.fill(path);
+  else if (figReady()) {
+    ctx.fill(path);
+    const edge = new Path2D(); cone.poly.forEach((p, i) => (i ? edge.lineTo(p.x, p.y) : edge.moveTo(p.x, p.y)));
+    ctx.lineJoin = 'miter'; ctx.miterLimit = 4; ctx.lineCap = 'butt'; ctx.lineWidth = SR.DEFAULTS.outline * behind.fh / RD.B.H; ctx.strokeStyle = P.black; ctx.stroke(edge);
+  } else {
+    const c = document.createElement('canvas'); c.width = ctx.canvas.width; c.height = ctx.canvas.height;
+    const x = c.getContext('2d'); x.fillStyle = P.black; x.fill(path);
+    x.globalCompositeOperation = 'destination-out'; x.drawImage(figureCanvas('silhouette', behind.fw, behind.fh), behind.fx, behind.fy);
+    ctx.drawImage(c, 0, 0);
+  }
+  ctx.restore();
+}
+// 口号：每一竖条（离 M 的距离 d → d+1）反算回原句的哪一列（格内单应变换：1/x 和原句的列号成线性），拉到这一处包络的高度。
+// 先在一张沿锥轴摆正的离屏画布上按整像素竖条画（2 倍分辨率，条和条之间没有缝），再整张转到主轴角度贴上去
+function drawSlogan(ctx, cone) {
+  const t = cone.text; if (!t) return;
+  // 排版用的那一行只有 240px 高；最后一个字往往画到 300–400px，拉大会发虚。按最后一个字的实际高度另排一行（多留 25%），只缩小不放大
+  const px = Math.min(1600, Math.max(SLOGAN_PX, Math.ceil(SLOGAN_PX * t.h1 / t.T.h * 1.25)));
+  const T = (px > t.T.px && sloganLine(t.str, t.color, px)) || t.T; t.drawPx = T.px;
+  const { tn, dv, ds, de, bounds } = t, cells = T.cells, n = cells.length - 1, SS = 2;
+  const len = de - ds, eMax = tn * bounds[n];
+  const wc = document.createElement('canvas'); wc.width = Math.max(1, Math.ceil(len * SS) + 2); wc.height = Math.max(1, Math.ceil(2 * eMax * SS) + 4);
+  const x = wc.getContext('2d'); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
+  const cy = wc.height / 2;
+  let i = 0;
+  const uAt = (xp) => { // xp：离包络交点的距离
+    while (i < n - 1 && xp > bounds[i + 1]) i++;
+    const p0 = bounds[i], p1 = bounds[i + 1];
+    return cells[i] + (cells[i + 1] - cells[i]) * (1 / xp - 1 / p0) / (1 / p1 - 1 / p0);
+  };
+  for (let k = 0; k * 1 < len * SS; k++) {
+    const d0 = ds + k / SS, d1 = Math.min(de, ds + (k + 1) / SS);
+    const u0 = clamp(uAt(d0 - dv), 0, T.w), u1 = clamp(uAt(d1 - dv), 0, T.w);
+    if (u1 - u0 <= 1e-6) continue;
+    const e = tn * ((d0 + d1) / 2 - dv) * SS; // 这一竖条处包络的半高
+    x.drawImage(T.c, T.sx + u0, T.sy, u1 - u0, T.h, k, cy - e, (d1 - d0) * SS, 2 * e);
+  }
+  ctx.save(); ctx.translate(cone.M.x, cone.M.y); ctx.rotate(rad(cone.aDeg));
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(wc, ds, -cy / SS, wc.width / SS, wc.height / SS);
+  ctx.restore();
+}
+
+// ---------- A 原典宣言 ----------
+// 人物在 A 里的位置：脸（红圆圆心）落在 F；嘴（喇叭尖）跟着人物走
+function figGeomA(W, H) {
+  const land = W > H, fh = H * (land ? 1.12 : 1.0), fw = fh * state.trim.w / state.trim.h;
+  const F = { x: W * (land ? 0.27 : 0.34), y: H * (land ? 0.30 : 0.27) };
+  const fx = F.x - state.focus.x * fw, fy = F.y - state.focus.y * fh;
+  const m = state.mouth || { x: state.focus.x + MOUTH.x, y: state.focus.y + MOUTH.y };
+  return { land, fw, fh, F, fx, fy, M: { x: fx + m.x * fw, y: fy + m.y * fh } };
+}
+function drawA(ctx, W, H, S) {
+  const P = PALETTES.A, a = S.angle, step = S.step;
+  const mono = step >= 2;
+  // 底
+  if (mono) { ctx.fillStyle = P.paper; ctx.fillRect(0, 0, W, H); }
+  else { const g = ctx.createLinearGradient(0, 0, W, H); g.addColorStop(0, '#ffd6e8'); g.addColorStop(1, '#c9e4ff'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); }
+  // 人物：放在左侧，高度略超出画面，脸落在 F
+  const { land, fw, fh, F, fx, fy, M } = figGeomA(W, H);
+  const R = Math.min(W, H) * (land ? 0.26 : 0.23) * S.circle;
+  // 第 3 步：红圆框住脸
+  if (step >= 3) { ctx.fillStyle = P.red; ctx.beginPath(); ctx.arc(F.x, F.y, R, 0, 7); ctx.fill(); }
+  // 第 3 步：黑色喇叭锥沿主轴张开。horn = 0：从嘴喊出去，压在人物上面；horn > 0：接在她自己的喇叭口上，画在人物后面，
+  // 口号从她的喇叭外面开始
+  // 主标题的字号和基线（锥要躲开标题区，先算）：第 0–1 步放白色圆角卡里，第 2 步起直接压在纸上并沿轴排
+  let titleSize = step >= 4 ? H * (land ? 0.24 : 0.19) : H * 0.11;
+  const base = step >= 4 ? { x: W * (land ? 0.45 : 0.30), y: H * (land ? 0.83 : 0.86) } : { x: W * 0.36, y: H * 0.80 };
+  // 标题太长（4 字以上）时缩到刚好压到右边缘，最多出血 0.06 个字，不把最后一个字切没
+  if (step >= 1 && S.title) {
+    const k = measure(ctx, S.title, cn(100)) / 100 * 0.92 * Math.cos(rad(a));
+    if (k > 0.06) titleSize = Math.min(titleSize, (W - base.x) / (k - 0.06));
+  }
+  const hornD = S.horn > 0 ? S.horn * fh : 0, g = { fx, fy, fw, fh }, ua = { x: Math.cos(rad(a)), y: Math.sin(rad(a)) }, na = { x: -ua.y, y: ua.x };
+  let clear = 0;
+  if (hornD > 0) clear = figureClear(g, M, ua, na, Math.tan(rad(S.wedge)), hornD, hornD * 3) + Math.min(W, H) * 0.015;
+  // 标题区上沿 = 标题下面那条纸色带的上沿（基线往上 0.98 个字高），再留 1.5% 短边：尖端在它下面多远（负数 = 在上面）
+  const floor = step >= 3 ? (M.x - base.x) * na.x + (M.y - base.y) * na.y + titleSize * 0.98 + Math.min(W, H) * 0.015 : undefined;
+  const snap = step >= 3 && hornD > 0 && mono && figReady() ? hornSnap(M, a, Math.tan(rad(S.wedge)), hornD, g) : null;
+  const cone = coneGeometry(M, a, rad(S.wedge), S, W, H, R, { hornD, clear, color: P.paper, floor, snap });
+  if (step >= 3 && hornD > 0) drawCone(ctx, cone, P, g);
+  // 人物：第 2 步起用形状重绘（三色剪纸）；原图模式 / 还没算好时用去色照片
+  if (mono && figReady()) drawShapesFigure(ctx, fx, fy, fw, fh, P);
+  else {
+    ctx.save();
+    if (mono) ctx.globalCompositeOperation = 'multiply';
+    else { ctx.shadowColor = 'rgba(80,60,120,.3)'; ctx.shadowBlur = 30; }
+    ctx.drawImage(figureCanvas(mono ? 'gray' : 'color', fw, fh), fx, fy); ctx.restore();
+  }
+  if (step >= 3 && !hornD) drawCone(ctx, cone, P);
+  // 第 4 步：口号装进喇叭：字的上下沿和锥边平行，一个字比一个字大（像罗德琴科 1924「书籍」）
+  if (step >= 4) drawSlogan(ctx, cone);
+  S._cone = cone;
+  if (step >= 1) {
+    if (!mono) {
+      // 有斜轴，但还留着渐变字和投影
+      ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.25)'; ctx.shadowBlur = 20;
+      const tg = ctx.createLinearGradient(base.x, 0, base.x + titleSize * 3, 0); tg.addColorStop(0, '#ff5fa2'); tg.addColorStop(1, '#5a8cff');
+      textAlong(ctx, S.title, base, a, cn(titleSize), tg); ctx.restore();
+    } else {
+      // 红色粗条与标题同轴；第 4 步在红条下面再压一条黑带（斜分屏），把黑色面积补到 20–25%
+      const bh = titleSize * 0.16 * S.bar, y0 = titleSize * 0.10, bandH = step >= 4 ? S.band * H : 0;
+      ctx.save(); ctx.translate(base.x, base.y); ctx.rotate(rad(a));
+      // 形状重绘的人物黑块多，黑字压上去会看不清：标题垫一条纸色带（字落在实心色带上，人物像被色带裁开的拼贴）
+      if (figReady()) { const bot = step >= 4 ? y0 : titleSize * 0.62; ctx.fillStyle = P.paper; ctx.fillRect(-titleSize * 0.12, -titleSize * 0.98, W * 2.2, titleSize * 0.98 + bot); }
+      ctx.fillStyle = P.red; ctx.fillRect(-W * 0.6, y0, W * 2.2, bh);
+      if (bandH > 0) { ctx.fillStyle = P.black; ctx.fillRect(-W * 0.6, y0 + bh, W * 2.2, bandH); }
+      ctx.restore();
+      textAlong(ctx, S.title, base, a, cn(titleSize), P.black, { scaleX: 0.92 });
+      S._band = { y: y0 + bh, h: bandH };
+    }
+    // 英文副标题 + 刻度：沿同一根轴；有黑带时反白放进黑带里
+    const inBand = mono && step >= 4 && S._band && S._band.h > 0;
+    let subSize = inBand ? Math.min(titleSize * 0.17, S._band.h * 0.5) : Math.max(18, titleSize * 0.17);
+    if (inBand && S.info) { // 黑带里放「副标题 + 信息」：放不下就整体缩小，最小到 65%
+      const need = measure(ctx, S.sub, cond(subSize), subSize * 0.28) + subSize * 1.6 + measure(ctx, S.info, cn(subSize * 0.95));
+      const startX = base.x - Math.sin(rad(a)) * (S._band.y + S._band.h * 0.5);
+      const avail = (W * 0.96 - startX) / Math.cos(rad(a));
+      subSize *= Math.max(0.65, Math.min(1, avail / need));
+    }
+    const off = inBand ? S._band.y + S._band.h * 0.5 + subSize * 0.36 : titleSize * (mono ? 0.55 : 0.35);
+    const p2 = { x: base.x - Math.sin(rad(a)) * off, y: base.y + Math.cos(rad(a)) * off };
+    const subCol = inBand ? P.paper : mono ? P.black : '#6a6a90';
+    textAlong(ctx, S.sub, p2, a, cond(subSize), subCol, { spacing: subSize * 0.28 });
+    if (step >= 4) {
+      ctx.save(); ctx.translate(p2.x, p2.y); ctx.rotate(rad(a)); ctx.fillStyle = subCol;
+      const sw = measure(ctx, S.sub, cond(subSize), subSize * 0.28);
+      // 刻度数按剩余长度算：保证角落信息排得下、不出画
+      const infoW = inBand && S.info ? measure(ctx, S.info, cn(subSize * 0.95)) : 0;
+      const room = (W - W * 0.04 - p2.x) / Math.cos(rad(a)) - sw - subSize * 1.6 - infoW;
+      const nTicks = inBand ? Math.max(0, Math.min(9, Math.floor(room / (subSize * 0.7)))) : 16;
+      for (let i = 0; i < nTicks; i++) ctx.fillRect(sw + subSize * 0.8 + i * subSize * 0.7, -subSize * (i % 4 === 0 ? 0.9 : 0.5), 3, subSize * (i % 4 === 0 ? 0.9 : 0.5));
+      // 有黑带时，角落信息直接排在刻度后面，不再单独做黑块
+      if (inBand && S.info) { ctx.font = cn(subSize * 0.95); ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left'; ctx.letterSpacing = '0px'; ctx.fillText(S.info, sw + subSize * 1.6 + nTicks * subSize * 0.7, 0); }
+      ctx.restore();
+    }
+  } else {
+    drawTitleCard(ctx, W, H, S);
+  }
+  // 第 4 步：角落信息块，保持正交（只有一根主斜轴）
+  if (step >= 4 && S.info && !(S._band && S._band.h > 0)) {
+    const fs = Math.round(Math.min(W, H) * 0.032), pad = fs * 0.7, tw = measure(ctx, S.info, cn(fs));
+    const bx = W - tw - pad * 2 - W * 0.04, by = H - fs - pad * 2 - H * 0.03;
+    ctx.fillStyle = P.black; ctx.fillRect(bx, by, tw + pad * 2, fs + pad * 2);
+    ctx.fillStyle = P.paper; ctx.font = cn(fs); ctx.textBaseline = 'top'; ctx.textAlign = 'left'; ctx.fillText(S.info, bx + pad, by + pad * 0.9);
+  }
+  if (mono) { ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.globalAlpha = 0.5; ctx.drawImage(grain(W, H, 38, S.seed), 0, 0); ctx.restore(); }
+  return { axisPoint: base, angle: a };
+}
+function drawTitleCard(ctx, W, H, S) {
+  const cw = Math.min(W * 0.62, 640), ch = H * 0.13, cx = W * 0.36, cy = H * 0.74;
+  ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.18)'; ctx.shadowBlur = 30; ctx.fillStyle = 'rgba(255,255,255,.88)';
+  ctx.beginPath(); ctx.roundRect(cx, cy, cw, ch, 26); ctx.fill(); ctx.restore();
+  const tg = ctx.createLinearGradient(cx, 0, cx + cw, 0); tg.addColorStop(0, '#ff5fa2'); tg.addColorStop(1, '#5a8cff');
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = tg; ctx.font = cn(Math.round(ch * 0.52));
+  ctx.fillText(S.title, cx + cw / 2, cy + ch * 0.44);
+  ctx.fillStyle = '#7a7aa0'; ctx.font = cond(Math.round(ch * 0.15)); ctx.letterSpacing = '5px'; ctx.fillText(S.sub, cx + cw / 2, cy + ch * 0.82); ctx.letterSpacing = '0px';
+}
+
+// ---------- B 至上主义：白色里漂浮的几何，人物只剩剪影 ----------
+function drawB(ctx, W, H, S) {
+  const P = PALETTES.B, a = S.angle;
+  ctx.fillStyle = P.paper; ctx.fillRect(0, 0, W, H);
+  const m = Math.min(W, H), C = { x: W * 0.5, y: H * 0.5 };
+  const along = (t, n = 0) => ({ x: C.x + Math.cos(rad(a)) * t * m - Math.sin(rad(a)) * n * m, y: C.y + Math.sin(rad(a)) * t * m + Math.cos(rad(a)) * n * m });
+  const rect = (p, w, h, col, extra = 0) => { ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(rad(a + extra)); ctx.fillStyle = col; ctx.fillRect(-w / 2, -h / 2, w, h); ctx.restore(); };
+  rect(along(-0.12, 0.02), m * 0.46, m * 0.34, P.black);
+  rect(along(0.18, -0.16), m * 0.62, m * 0.045, P.red);
+  rect(along(0.30, 0.12), m * 0.13, m * 0.13, P.blue, 0);
+  rect(along(-0.36, -0.20), m * 0.30, m * 0.018, P.yellow);
+  rect(along(0.42, -0.02), m * 0.05, m * 0.05, P.green);
+  ctx.fillStyle = P.red; const pc = along(0.34, -0.33); ctx.beginPath(); ctx.arc(pc.x, pc.y, m * 0.065, 0, 7); ctx.fill();
+  // 人物剪影：落在黑块的「影子」里，用纸色剪出来（形状重绘时用拉直后的外形）
+  const fh = m * 0.52, fw = fh * state.trim.w / state.trim.h, fp = along(-0.12, 0.02);
+  ctx.save(); ctx.translate(fp.x, fp.y); ctx.rotate(rad(a)); ctx.globalCompositeOperation = 'source-over';
+  if (figReady()) drawShapesFigure(ctx, -fw * 0.62, -fh * 0.42, fw, fh, { paper: P.paper }, { silOnly: true });
+  else {
+    const sil = figureCanvas('silhouette', fw, fh); const t = document.createElement('canvas'); t.width = sil.width; t.height = sil.height;
+    const tx = t.getContext('2d'); tx.drawImage(sil, 0, 0); tx.globalCompositeOperation = 'source-in'; tx.fillStyle = P.paper; tx.fillRect(0, 0, t.width, t.height);
+    ctx.drawImage(t, -fw * 0.62, -fh * 0.42);
+  }
+  ctx.restore();
+  // 文字很少：小字、加大字距，放在漂浮群边缘
+  const ts = m * 0.055; textAlong(ctx, S.title, along(-0.05, 0.28), a, cn(ts), P.black, { spacing: ts * 0.35 });
+  textAlong(ctx, S.sub, along(-0.05, 0.33), a, cond(m * 0.026), P.black, { spacing: m * 0.012 });
+  ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.globalAlpha = 0.35; ctx.drawImage(grain(W, H, 30, S.seed), 0, 0); ctx.restore();
+  return { axisPoint: C, angle: a };
+}
+
+// ---------- G 工业构成：巨字压边 + 警示胶带斜穿 + 编号 ----------
+function drawG(ctx, W, H, S) {
+  const P = PALETTES.G, a = S.angle, m = Math.min(W, H), land = W > H;
+  ctx.fillStyle = P.paper; ctx.fillRect(0, 0, W, H);
+  ctx.save(); ctx.globalAlpha = 0.9; ctx.globalCompositeOperation = 'multiply'; ctx.drawImage(grain(W, H, 70, S.seed + 'g'), 0, 0); ctx.restore();
+  // 深灰块 + 人物（形状重绘：浅灰 / 警示黄 / 黑；原图：去色）
+  const bx = W * (land ? 0.52 : 0.42), by = H * (land ? 0.0 : 0.30), bw = W - bx, bh = H - by;
+  ctx.fillStyle = P.dark; ctx.fillRect(bx, by, bw, bh);
+  const fh = bh * 1.05, fw = fh * state.trim.w / state.trim.h;
+  ctx.save(); ctx.beginPath(); ctx.rect(bx, by, bw, bh); ctx.clip();
+  if (figReady()) drawShapesFigure(ctx, bx + bw * 0.5 - fw * state.focus.x, by + bh * 0.06, fw, fh, { paper: P.paper, red: P.yellow, black: P.black });
+  else { ctx.globalCompositeOperation = 'luminosity'; ctx.drawImage(figureCanvas('gray', fw, fh), bx + bw * 0.5 - fw * state.focus.x, by + bh * 0.06); }
+  ctx.restore();
+  // 巨字：正交，压左上并出血
+  const ts = land ? H * 0.42 : W * 0.36;
+  ctx.fillStyle = P.black; ctx.font = cn(ts); ctx.textBaseline = 'top'; ctx.textAlign = 'left';
+  const chars = [...S.title];
+  if (land) ctx.fillText(S.title, -ts * 0.06, -ts * 0.12);
+  else chars.forEach((c, i) => ctx.fillText(c, -ts * 0.05 + (i % 2) * ts * 0.0, -ts * 0.1 + i * ts * 0.92));
+  // 警示胶带：唯一的斜轴
+  const tapeH = m * 0.075, cx = W * 0.5, cy = H * (land ? 0.62 : 0.56);
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(rad(a)); ctx.fillStyle = P.yellow; ctx.fillRect(-W, -tapeH / 2, W * 2, tapeH);
+  ctx.beginPath(); ctx.rect(-W, -tapeH / 2, W * 2, tapeH); ctx.clip(); ctx.fillStyle = P.black;
+  for (let x = -W; x < W; x += tapeH * 1.2) { ctx.beginPath(); ctx.moveTo(x, -tapeH / 2); ctx.lineTo(x + tapeH * 0.5, -tapeH / 2); ctx.lineTo(x + tapeH * 0.5 - tapeH, tapeH / 2); ctx.lineTo(x - tapeH, tapeH / 2); ctx.fill(); }
+  ctx.restore();
+  // 小字说明保持正交，贴左下角，胶带是唯一的斜线；放不下就缩小，不伸进右边的深灰块（黑字压深灰看不清）
+  const line = `${S.sub}  ·  ${S.info}`, x0 = W * 0.04, room = bx - x0 - m * 0.02;
+  let fs0 = m * 0.03;
+  ctx.fillStyle = P.black; ctx.textBaseline = 'bottom';
+  ctx.font = cond(fs0); ctx.letterSpacing = `${m * 0.008}px`;
+  const tw = ctx.measureText(line).width;
+  if (tw > room) { const k = room / tw; fs0 *= k; ctx.font = cond(fs0); ctx.letterSpacing = `${m * 0.008 * k}px`; }
+  ctx.fillText(line, x0, H * 0.965); ctx.letterSpacing = '0px';
+  // 编号与信号红方块（正交网格）
+  const fs = m * 0.028; ctx.fillStyle = '#EDEDED'; ctx.font = cond(fs); ctx.textBaseline = 'top';
+  ctx.fillText('01.0  CENTRE', bx + fs, by + fs); ctx.fillText(S.sub.toUpperCase(), bx + fs, by + fs * 2.3);
+  ctx.fillStyle = P.red; for (let i = 0; i < 4; i++) ctx.fillRect(W - fs * 3.6 + (i % 2) * fs * 1.4, by + fs + Math.floor(i / 2) * fs * 1.4, fs, fs);
+  return { axisPoint: { x: cx, y: cy }, angle: a };
+}
+
+// ---------- 看重绘过程：原图 / ① 色块 / ② 三色 / ③ 分块（留线稿时是线稿）/ ④ 直边 ----------
+function stageCanvas(which) {
+  const pieceView = which === 'line' && !state.lines; // ③：不留线稿时看分块（并完碎块的三色图 + 纸色大块之间的边界）
+  const B = RD.B, key = { k: 'cacheK', '3c': 'cache3c', line: pieceView ? 'cachePiece' : 'cacheLine' }[which];
+  if (RD[key]) return RD[key];
+  const c = document.createElement('canvas'); c.width = B.W; c.height = B.H;
+  const x = c.getContext('2d'), im = x.createImageData(B.W, B.H), d = im.data;
+  const PAL3 = [null, hexToRgb(SR.PAL.paper), hexToRgb(SR.PAL.red), hexToRgb(SR.PAL.black)];
+  let edge = null;
+  if (pieceView && RD.Ly.pieces) { // 边界像素外扩一圈，缩小看也看得见
+    const L = RD.Ly.pieces.lab, W = B.W, H = B.H, e0 = new Uint8Array(B.N); edge = new Uint8Array(B.N);
+    for (let p = 0; p < B.N; p++) { const a = L[p]; if (!a) continue; const x0 = p % W; let b; if ((x0 < W - 1 && (b = L[p + 1]) && b !== a) || (p < B.N - W && (b = L[p + W]) && b !== a)) e0[p] = 1; }
+    for (let p = 0; p < B.N; p++) if (e0[p]) { const x0 = p % W; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = x0 + dx, q = p + dy * W + dx; if (xx >= 0 && xx < W && q >= 0 && q < B.N && L[q]) edge[q] = 1; } }
+  }
+  for (let p = 0; p < B.N; p++) {
+    let col = null;
+    if (which === 'k') { const k = RD.A.labels[p]; if (k !== 255) col = RD.A.clusters[k].rgb; }
+    else if (which === '3c') { const v = RD.Ly.cls3[p]; if (v) col = PAL3[v]; } // 第 ② 步的三色图（并碎块之前）
+    else if (pieceView) { const v = RD.Ly.cls[p]; if (v) col = edge && edge[p] ? PAL3[3] : PAL3[v]; }
+    else if (B.m[p]) col = RD.Ln && RD.Ln.mask[p] ? PAL3[3] : PAL3[1];
+    if (col) { d[p * 4] = col[0]; d[p * 4 + 1] = col[1]; d[p * 4 + 2] = col[2]; d[p * 4 + 3] = 255; }
+  }
+  x.putImageData(im, 0, 0);
+  return (RD[key] = c);
+}
+function drawStage(ctx, which, x, y, w, h) {
+  if (which === 'shape') return drawShapesFigure(ctx, x, y, w, h, SR.PAL);
+  figXforms.push(ctx.getTransform().translate(x, y).scale(w / RD.B.W, h / RD.B.H));
+  if (which === 'src') { const t = state.trim; return ctx.drawImage(state.img, t.x, t.y, t.w, t.h, x, y, w, h); }
+  ctx.drawImage(stageCanvas(which), x, y, w, h);
+}
+function drawProcess(ctx, W, H, view) {
+  ctx.fillStyle = '#D6D1C4'; ctx.fillRect(0, 0, W, H);
+  const list = MULTI[view] || [view], names = view === 'three' ? VIEW_NAME3 : VIEW_NAME;
+  const n = list.length, cap = Math.round(Math.min(W / n, H) * (n > 1 ? 0.075 : 0.045)), padT = cap * 2.2, pad = Math.min(W, H) * 0.03;
+  const ar = RD.B.W / RD.B.H, cellW = W / n;
+  list.forEach((v, i) => {
+    let h = H - padT - pad, w = h * ar;
+    if (w > cellW - pad * 1.5) { w = cellW - pad * 1.5; h = w / ar; }
+    const x = i * cellW + (cellW - w) / 2, y = padT + (H - padT - pad - h) / 2;
+    drawStage(ctx, v, x, y, w, h);
+    ctx.fillStyle = '#1A1A1A'; ctx.font = cn(cap); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(v === 'line' && state.lines ? '③ 线稿' : names[v], i * cellW + cellW / 2, padT * 0.5);
+  });
+  return { axisPoint: { x: W / 2, y: H / 2 }, angle: 0 };
+}
+
+// ---------- 量：配色面积与三档明度 ----------
+function analyse(ctx, W, H, preset) {
+  const pal = PALETTES[preset]; const names = Object.keys(pal); const cols = names.map((n) => hexToRgb(pal[n]));
+  const d = ctx.getImageData(0, 0, W, H).data; const cnt = new Array(names.length).fill(0); const tone = [0, 0, 0]; let n = 0;
+  for (let i = 0; i < d.length; i += 4 * 7) {
+    const p = [d[i], d[i + 1], d[i + 2]]; let best = 0, bd = 1e9;
+    for (let k = 0; k < cols.length; k++) { const c = cols[k]; const dd = (p[0] - c[0]) ** 2 + (p[1] - c[1]) ** 2 + (p[2] - c[2]) ** 2; if (dd < bd) { bd = dd; best = k; } }
+    cnt[best]++; const L = lum(p); tone[L < 33 ? 0 : L < 66 ? 1 : 2]++; n++;
+  }
+  return { names, pal, area: cnt.map((c) => c / n), tone: tone.map((t) => t / n) };
+}
+function renderMeter(res) {
+  const nameZh = { paper: '纸', red: '红', black: '黑', mid: '灰', blue: '蓝', yellow: '黄', green: '绿', dark: '深灰' };
+  const pct = (v) => Math.round(v * 100) + '%';
+  const bar = res.names.map((k, i) => `<span style="flex:${res.area[i]};background:${res.pal[k]}"></span>`).join('');
+  const lg = res.names.map((k, i) => `<span><i style="background:${res.pal[k]}"></i>${nameZh[k] || k} ${pct(res.area[i])}</span>`).join('');
+  const tb = [['#1a1a1a', '暗'], ['#8a8a80', '中'], ['#ece6d6', '亮']].map(([c], i) => `<span style="flex:${res.tone[i]};background:${c}"></span>`).join('');
+  const tl = ['暗', '中', '亮'].map((t, i) => `<span>${t} ${pct(res.tone[i])}</span>`).join('');
+  $('meter').innerHTML = `<b>实测面积</b><div class="bar">${bar}</div><div class="legend">${lg}</div>
+    <div style="margin-top:8px"><b>去色以后：暗 / 中 / 亮</b></div><div class="bar">${tb}</div><div class="legend">${tl}</div>`;
+}
+
+// ---------- 侧栏：人物处理、红色给谁的色块、状态 ----------
+function renderFigPanel() {
+  const on = state.fig === 'redraw' && !!SR;
+  $('figBox').classList.toggle('off', !on);
+  $('dlSvg').style.display = on ? '' : 'none';
+  document.querySelectorAll('#figMode button').forEach((b) => b.classList.toggle('on', b.dataset.v === state.fig));
+  document.querySelectorAll('#redMode button').forEach((b) => b.classList.toggle('on', b.dataset.v === state.redMode));
+  $('epsV').textContent = state.eps; $('viewSel').value = state.view;
+  // B 只画剪影，「红色给谁」没有用；G 里红色块画成警示黄
+  const isG = state.preset === 'G';
+  $('redGroup').style.display = state.preset === 'B' ? 'none' : '';
+  $('redLabel').textContent = isG ? '黄色给谁（G 里红色块画成警示黄）' : '红色给谁';
+  const sw = $('swatches'), rl = $('swRoles');
+  sw.classList.toggle('yellow', isG);
+  view.classList.toggle('pick', on && state.redMode === 'pick' && state.preset !== 'B');
+  const st = $('status');
+  if (!RD.job) {
+    const done = on && redrawReady() && RD.shapes ? `重绘好了：${(RD.ms / 1000).toFixed(2)} 秒` : '';
+    st.textContent = state.warn ? state.notice : [state.notice, done].filter(Boolean).join(' '); // 有警告时只说警告
+    st.classList.toggle('warn', !!state.warn);
+  }
+  if (!on || !redrawReady() || !RD.roles) { sw.innerHTML = ''; rl.innerHTML = ''; return; }
+  const zh = { paper: '纸', red: isG ? '黄' : '红', black: '黑' };
+  const order = RD.A.clusters.slice().sort((p, q) => q.frac - p.frac);
+  sw.innerHTML = order.map((d) => `<button type="button" data-k="${d.k}" class="${RD.roles[d.k] === 'red' ? 'red' : ''}" style="background:rgb(${d.rgb.join(',')})" title="色块 ${d.k} · 占人物 ${Math.round(d.frac * 100)}%"></button>`).join('');
+  rl.innerHTML = order.map((d) => `<span>${zh[RD.roles[d.k]]}</span>`).join('');
+  sw.querySelectorAll('button').forEach((b) => (b.onclick = () => toggleRed(+b.dataset.k)));
+}
+function toggleRed(k) {
+  if (!redrawReady()) return;
+  if (state.redMode !== 'pick' || !state.redSet) { state.redMode = 'pick'; state.redSet = new Set(RD.roles.map((r, i) => (r === 'red' ? i : -1)).filter((i) => i >= 0)); }
+  if (state.redSet.has(k)) state.redSet.delete(k); else state.redSet.add(k);
+  render();
+}
+// 画布上一点 → 人物上的哪个色块（7×7 邻域里的多数）
+function clusterAt(px, py) {
+  if (!redrawReady()) return -1;
+  for (const M of figXforms) {
+    const q = M.inverse().transformPoint(new DOMPoint(px, py)), x0 = Math.round(q.x), y0 = Math.round(q.y), B = RD.B;
+    if (x0 < 0 || y0 < 0 || x0 >= B.W || y0 >= B.H) continue;
+    const votes = new Array(9).fill(0);
+    for (let y = y0 - 3; y <= y0 + 3; y++) for (let x = x0 - 3; x <= x0 + 3; x++) { if (x < 0 || y < 0 || x >= B.W || y >= B.H) continue; const k = RD.A.labels[y * B.W + x]; if (k !== 255) votes[k]++; }
+    const best = votes.indexOf(Math.max(...votes));
+    if (votes[best] > 0) return best;
+  }
+  return -1;
+}
+
+// ---------- 主渲染 ----------
+const view = $('view');
+function renderSide() {
+  $('stepdesc').textContent = state.step === 2 && state.fig === 'photo' ? STEP2_PHOTO : STEP_TEXT[state.step];
+  const multi = state.view !== 'poster' && state.fig === 'redraw';
+  document.querySelectorAll('#steps button').forEach((b, i) => { b.classList.toggle('on', i === state.step && !multi); b.disabled = multi; });
+  $('preset').disabled = multi;
+  $('angleV').textContent = `${state.angle}°`;
+  const pickNow = state.fig === 'redraw' && state.redMode === 'pick' && state.preset !== 'B';
+  $('clickHint').textContent = multi ? '看过程时步骤按钮不起作用：「看重绘过程」选回「海报」。'
+    : pickNow ? '点人物身上的颜色：变红 / 变回（按住 Alt 点：定嘴的位置）。'
+    : state.preset === 'A' && state.step >= 1 ? '点一下她的嘴，喇叭就从这儿喊出去。' : '';
+  renderFigPanel();
+}
+function render() {
+  if (!state.img) return;
+  const need = needRedraw();
+  // 要用形状重绘但还没算好：先开算，画布保持上一帧（顶上显示「重绘中…」），算完会再调 render
+  if (need && !redrawReady() && !(RD.err && RD.err.img === state.img)) { startRedraw(); renderSide(); window.__rendered = false; return; }
+  const [W, H] = state.size.split('x').map(Number); view.width = W; view.height = H;
+  if (redrawReady()) refreshShapes(); // 只要算过就跟着「红色给谁」「脸」「直边程度」更新（色块按钮、dataset 也跟着变）
+  figXforms = [];
+  const ctx = view.getContext('2d', { willReadFrequently: true }); ctx.save(); ctx.clearRect(0, 0, W, H);
+  let info;
+  if (state.view !== 'poster' && figReady()) info = drawProcess(ctx, W, H, state.view);
+  else if (state.step === 0) { drawBefore(ctx, W, H, state); info = { axisPoint: { x: W / 2, y: H / 2 }, angle: 0 }; }
+  else info = ({ A: drawA, B: drawB, G: drawG }[state.preset])(ctx, W, H, state);
+  ctx.restore();
+  const res = analyse(ctx, W, H, state.preset); renderMeter(res);
+  document.body.dataset.stats = JSON.stringify({ area: Object.fromEntries(res.names.map((k, i) => [k, +res.area[i].toFixed(3)])), tone: res.tone.map((t) => +t.toFixed(3)) });
+  if (redrawReady() && RD.Ly) {
+    document.body.dataset.redraw = JSON.stringify({ ms: Math.round(RD.ms), t: Object.fromEntries(Object.entries(RD.t || {}).map(([k, v]) => [k, Math.round(v)])), size: [RD.B.W, RD.B.H], eps: state.eps, workers: RD.workers,
+      shapes: RD.shapes.length, figure: Object.fromEntries(Object.entries(RD.Ly.area).map(([k, v]) => [k, +v.toFixed(3)])), red: RD.roles.map((r, k) => (r === 'red' ? k : -1)).filter((k) => k >= 0),
+      clusters: RD.A.clusters.map((d) => ({ k: d.k, L: d.L, C: d.C, hue: d.hue, frac: d.frac, role: RD.roles[d.k] })),
+      face: { x: +state.focus.x.toFixed(3), y: +state.focus.y.toFixed(3) }, mouth: state.mouth ? { x: +state.mouth.x.toFixed(3), y: +state.mouth.y.toFixed(3) } : null,
+      lines: state.lines, merged: RD.Ly.merged || 0, mergeMin: state.merge, pieceMin: state.pieces, pieces: RD.Ly.pieces ? RD.Ly.pieces.n : 0,
+      pieceLines: (RD.shapes.find((sh) => sh.piece) || { polys: [] }).polys.length });
+  } else delete document.body.dataset.redraw; // 这张图没做形状重绘（去色照片 / 带背景）：别留着上一张图的结果
+  // 喇叭锥和口号的几何（画布像素），给 agent 自检：锥边、口号包络、第一个 / 最后一个字的高
+  const cn_ = state._cone;
+  if (cn_ && state.preset === 'A' && state.view === 'poster' && state.step >= 3) {
+    const r1 = (v) => +v.toFixed(1), t = cn_.text;
+    document.body.dataset.cone = JSON.stringify({ M: [r1(cn_.M.x), r1(cn_.M.y)], angle: state.angle, wedge: state.wedge, horn: state.horn, hornD: r1(cn_.hornD), Lb: r1(cn_.Lb), Le: r1(cn_.Le),
+      snap: [+cn_.snap.up.toFixed(2), +cn_.snap.lo.toFixed(2)], floorGap: cn_.floorGap === null ? null : r1(cn_.floorGap),
+      poly: cn_.poly.map((p) => [r1(p.x), r1(p.y)]), text: t ? { ds: r1(t.ds), de: r1(t.de), dv: r1(t.dv), first: r1(t.h0), last: r1(t.h1), squash: +t.sq.toFixed(2), cells: t.T.cells.length - 1, px: t.drawPx || t.T.px } : null });
+  } else delete document.body.dataset.cone;
+  if (state.showGray) { const id = ctx.getImageData(0, 0, W, H); const d = id.data; for (let i = 0; i < d.length; i += 4) { const L = lum([d[i], d[i + 1], d[i + 2]]); const v = L < 33 ? 26 : L < 66 ? 138 : 236; d[i] = d[i + 1] = d[i + 2] = v; } ctx.putImageData(id, 0, 0); }
+  if (state.showAxis && state.step > 0 && state.view === 'poster') {
+    const { axisPoint: p, angle } = info; const L = Math.hypot(W, H);
+    ctx.save(); ctx.strokeStyle = '#00b3ff'; ctx.lineWidth = Math.max(3, W / 360); ctx.setLineDash([24, 14]);
+    ctx.beginPath(); ctx.moveTo(p.x - Math.cos(rad(angle)) * L, p.y - Math.sin(rad(angle)) * L); ctx.lineTo(p.x + Math.cos(rad(angle)) * L, p.y + Math.sin(rad(angle)) * L); ctx.stroke(); ctx.restore();
+  }
+  renderSide();
+  window.__rendered = true; // 无头截图等这个：要用形状重绘时，算完才会走到这里
+}
+// 看过程：多格并排时自动切到 16:9，切回来时还原画幅
+function setView(v) {
+  const wasMulti = !!MULTI[state.view], isMulti = !!MULTI[v];
+  if (isMulti && !wasMulti) { state.sizeBeforeMulti = state.size; state.size = '1920x1080'; }
+  else if (!isMulti && wasMulti && state.sizeBeforeMulti) { state.size = state.sizeBeforeMulti; state.sizeBeforeMulti = null; }
+  state.view = v; $('size').value = state.size; render();
+}
+
+// ---------- 界面 ----------
+function bind() {
+  const st = $('steps'); for (let i = 0; i < 5; i++) { const b = document.createElement('button'); b.type = 'button'; b.textContent = i; b.onclick = () => { state.step = i; render(); }; st.appendChild(b); }
+  const map = { preset: 'preset', title: 'title', slogan: 'slogan', sub: 'sub', info: 'info', size: 'size', seed: 'seed' };
+  for (const [id, key] of Object.entries(map)) { const el = $(id); el.value = state[key]; el.oninput = () => { state[key] = el.value; if (key === 'size') state.sizeBeforeMulti = null; render(); }; }
+  $('angle').value = state.angle; $('angle').oninput = (e) => { state.angle = +e.target.value; render(); };
+  $('showAxis').checked = state.showAxis; $('showAxis').onchange = (e) => { state.showAxis = e.target.checked; render(); };
+  $('showGray').checked = state.showGray; $('showGray').onchange = (e) => { state.showGray = e.target.checked; render(); };
+  $('pickImg').onclick = () => $('img').click();
+  $('mirror').checked = state.mirror;
+  $('mirror').onchange = async (e) => {
+    state.mirror = e.target.checked;
+    if (!state.raw) { render(); return; }
+    const seq = ++loadSeq;
+    try {
+      const a = analyseImage(state.mirror ? await mirrored(state.raw) : state.raw); a.raw = state.raw;
+      if (seq !== loadSeq) return;
+      state.faceSet = false; state.focus = state.mouth = null; state.redMode = 'auto'; state.redSet = null;
+      applyImage(a); render();
+    } catch (err) { console.error(err); say('这张图翻不过来：换一张自己的图再试。', true); }
+  };
+  $('img').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; loadFile(f); };
+  // 拖进来换图、Ctrl+V 粘贴：不让浏览器把图片当成新页面打开
+  const hasFiles = (e) => !!(e.dataTransfer && [...e.dataTransfer.types].includes('Files'));
+  let drag = 0;
+  window.addEventListener('dragenter', (e) => { if (hasFiles(e)) { e.preventDefault(); drag++; document.body.classList.add('dragging'); } });
+  window.addEventListener('dragover', (e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = hasFiles(e) ? 'copy' : 'none'; });
+  window.addEventListener('dragleave', () => { if (--drag <= 0) { drag = 0; document.body.classList.remove('dragging'); } });
+  window.addEventListener('drop', (e) => {
+    e.preventDefault(); drag = 0; document.body.classList.remove('dragging');
+    const fs = [...((e.dataTransfer && e.dataTransfer.files) || [])]; loadFile(fs.find((f) => /^image\//.test(f.type)) || fs[0]);
+  });
+  window.addEventListener('paste', (e) => {
+    const items = [...((e.clipboardData && e.clipboardData.items) || [])], it = items.find((i) => i.kind === 'file' && /^image\//.test(i.type));
+    if (!it) return;
+    const t = e.target; if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') && items.some((i) => i.type === 'text/plain')) return; // 往输入框里贴字：照常
+    e.preventDefault(); loadFile(it.getAsFile());
+  });
+  document.querySelectorAll('#figMode button').forEach((b) => (b.onclick = () => { state.fig = b.dataset.v; state.figAuto = false; render(); }));
+  document.querySelectorAll('#redMode button').forEach((b) => (b.onclick = () => {
+    if (b.dataset.v === 'auto') { state.redMode = 'auto'; state.redSet = null; }
+    else if (state.redMode !== 'pick') { state.redMode = 'pick'; state.redSet = redrawReady() ? autoRedSet() : null; }
+    render();
+  }));
+  $('eps').value = state.eps; $('eps').oninput = (e) => { state.eps = +e.target.value; render(); };
+  $('lines').checked = state.lines; $('lines').onchange = (e) => { state.lines = e.target.checked; render(); };
+  $('viewSel').onchange = (e) => setView(e.target.value);
+  view.onclick = (e) => {
+    const r = view.getBoundingClientRect(); const [W, H] = state.size.split('x').map(Number);
+    const px = (e.clientX - r.left) / r.width * W, py = (e.clientY - r.top) / r.height * H;
+    // 点颜色：「点选」时直接点；「自动」时按住 Shift 点（会切到点选）。B 只画剪影，去色照片没有色块，都不点颜色
+    const canColor = state.fig === 'redraw' && state.preset !== 'B' && redrawReady();
+    if (canColor && ((state.redMode === 'pick' && !e.altKey) || e.shiftKey)) { const k = clusterAt(px, py); if (k >= 0) toggleRed(k); return; }
+    if (state.view !== 'poster' || state.preset !== 'A' || state.step < 1) return; // 点嘴只对 A 生效
+    // 点哪里，哪里就是嘴：喇叭尖落在这儿；红圆圆心按嘴的位置反推（嘴左上方一点）
+    const g = figGeomA(W, H), m = { x: (px - g.fx) / g.fw, y: (py - g.fy) / g.fh };
+    state.mouth = m; state.focus = { x: m.x - MOUTH.x, y: m.y - MOUTH.y }; state.faceSet = true; render();
+  };
+  // 下载：只下海报本身，不带「主斜轴」「去色」这两个检查层
+  $('dl').onclick = () => {
+    const keep = [state.showGray, state.showAxis], strip = keep[0] || keep[1];
+    if (strip) { state.showGray = state.showAxis = false; render(); }
+    view.toBlob((b) => saveBlob(b, `constructivism_${state.preset}_${state.title}.png`)); // toBlob 调用时就拷下了当前画面
+    if (strip) { [state.showGray, state.showAxis] = keep; render(); }
+  };
+  $('dlSvg').onclick = () => {
+    if (!redrawReady() || !RD.shapes) return;
+    saveBlob(new Blob([SR.toSVG(RD.shapes, RD.B.W, RD.B.H, SR.PAL)], { type: 'image/svg+xml' }), `figure_${state.title}.svg`);
+  };
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return; // Ctrl+0 / Ctrl+1–4 / Ctrl+A 留给浏览器
+    const t = e.target; if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (e.key >= '0' && e.key <= '4') { state.step = +e.key; render(); }
+    if (e.key === 'a') { state.showAxis = !state.showAxis; $('showAxis').checked = state.showAxis; render(); }
+    if (e.key === 'g') { state.showGray = !state.showGray; $('showGray').checked = state.showGray; render(); }
+    if (e.key === 'r' && SR) { state.fig = state.fig === 'redraw' ? 'photo' : 'redraw'; state.figAuto = false; render(); }
+  });
+}
+
+// 一张图都读不到时（比如直接双击打开又读不到示例图）：画一张提示
+function drawWelcome() {
+  view.width = 1080; view.height = 1440; const x = view.getContext('2d');
+  x.fillStyle = '#E8DCC0'; x.fillRect(0, 0, 1080, 1440); x.fillStyle = '#1A1A1A'; x.font = cn(52);
+  x.fillText('上传一张角色图就能开始。', 80, 260);
+  x.font = `600 34px system-ui, ${CN_FALLBACK}`; x.fillStyle = '#5a574f';
+  ['点左边「换成你的角色」，或者把图拖进来。', '透明背景的 PNG 效果最好。'].forEach((t, i) => x.fillText(t, 80, 350 + i * 56));
+}
+
+(async () => {
+  bind();
+  if (state.fig === 'redraw') getPool(); // 线程先起好，和字体、图片一起加载
+  await Promise.all([document.fonts.load(cn(100), '构成'), document.fonts.load('100px Cond', 'A')]).catch(() => {});
+  if (state.view !== 'poster' && MULTI[state.view] && !params.get('size')) state.size = '1920x1080';
+  $('size').value = state.size;
+  // 仓库不带示例图：没给 img= 就先显示欢迎页，等用户上传
+  if (!params.get('img')) { drawWelcome(); renderSide(); say('在左边上传一张角色图就能开始。'); window.__rendered = true; return; }
+  try { applyImage(await loadSource(params.get('img'))); }
+  catch (e) {
+    console.error(e);
+    drawWelcome(); renderSide();
+    say(params.get('img') ? 'img= 指定的图读不到（路径不对，或者是直接双击打开的页面）：在左边上传一张图。' : '在左边上传一张角色图就能开始。');
+    window.__rendered = true; return;
+  }
+  render();
+})();
+</script>
+</body>
+</html>
